@@ -1,14 +1,16 @@
-payment-service
+# payment-service
+
 A fully isolated, high-trust financial microservice responsible for payment processing, escrow management, fund release, refunds, and transaction lifecycle tracking.
 
-Responsibilities
+## Responsibilities
 ✅ Does	❌ Does NOT
 Payment processing (Stripe, Paystack, Flutterwave)	User authentication
 Escrow holding and release	Notifications or email/SMS
 Refund processing	Marketplace logic (bookings/reviews)
 Transaction lifecycle tracking	Gateway routing
 Webhook ingestion and idempotent processing	WebSocket connections
-Architecture
+
+## Architecture
 API Gateway
    ↓
 backend-api (business logic)
@@ -25,7 +27,7 @@ CREATED → FUNDED → HELD → RELEASED
                   DISPUTED → RELEASED
                            → REFUNDED
 
-Stack
+## Stack
 Node.js 22 + TypeScript + Express 5
 Prisma + PostgreSQL
 BullMQ + Redis (async job processing)
@@ -34,17 +36,17 @@ Pino (structured logging)
 Zod (validation)
 Docker + GitHub Actions
 Quick Start
-# 1. Copy environment file
+## 1. Copy environment file
 cp .env.example .env
-# 2. Install dependencies
+## 2. Install dependencies
 pnpm install
-# 3. Generate Prisma client
+## 3. Generate Prisma client
 pnpm run db:generate
-# 4. Push schema to database
+## 4. Push schema to database
 pnpm run db:push
-# 5. Seed development data
+## 5. Seed development data
 pnpm run db:seed
-# 6. Start development server
+## 6. Start development server
 pnpm run dev
 
 With Docker:
