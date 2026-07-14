@@ -1,0 +1,273 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Enums ────────────────────────────────────────────────────────────────────
+
+enum PaymentStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  CANCELLED
+  REFUNDED
+}
+
+enum PaymentProvider {
+  STRIPE
+  PAYSTACK
+  FLUTTERWAVE
+}
+
+enum EscrowStatus {
+  CREATED
+  FUNDED
+  HELD
+  RELEASE_PENDING
+  PAYOUT_FAILED
+  RELEASED
+  REFUND_PENDING
+  REFUNDED
+  DISPUTED
+  CHARGEBACK
+  EXPIRED
+}
+
+enum TransactionType {
+  PAYMENT
+  REFUND
+  ESCROW_RELEASE
+}
+
+enum TransactionStatus {
+  PENDING
+  COMPLETED
+  FAILED
+}
+
+enum WebhookStatus {
+  PENDING
+  PROCESSED
+  FAILED
+  SKIPPED
+}
+
+enum LedgerEntryType {
+  FUND
+  HOLD
+  COMMISSION
+  PAYOUT
+  REFUND
+  DISPUTE_LOCK
+  DISPUTE_RESOLVED
+  CHARGEBACK
+  EXPIRY
+  PAYOUT_FAILURE
+}
+
+enum FraudFlagType {
+  MULTIPLE_FAILED_PAYMENTS
+  RAPID_REFUND_REQUEST
+  CHARGEBACK_SPIKE
+  SUSPICIOUS_PAYOUT_PATTERN
+  HIGH_DISPUTE_RATE
+}
+
+// ─── Core Payment Models ──────────────────────────────────────────────────────
+
+model Payment {
+  id           String          @id @default(cuid())
+  userId       String
+  amount       Int
+  currency     String          @default("NGN")
+  countryCode  String          @default("NG")
+  status       PaymentStatus   @default(PENDING)
+  provider     PaymentProvider
+  reference    String          @unique
+  providerRef  String?
+  metadata     Json?
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  transactions Transaction[]
+  escrow       Escrow?
+
+  @@index([userId])
+  @@index([reference])
+  @@index([status])
+  @@index([countryCode])
+}
+
+model Escrow {
+  id                String       @id @default(cuid())
+  bookingId         String       @unique
+  payerId           String
+  payeeId           String
+  amount            Int
+  currency          String       @default("NGN")
+  countryCode       String       @default("NG")
+  paymentCurrency   String?
+  payoutCurrency    String?
+  exchangeRate      Float?
+  status            EscrowStatus @default(CREATED)
+  commissionRate    Float?
+  commissionAmount  Int?
+  netAmount         Int?
+  payoutAttempts    Int          @default(0)
+  releaseConditions Json?
+  paymentId         String?      @unique
+  payment           Payment?     @relation(fields: [paymentId], references: [id])
+  chargebackId      String?
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+  pendingAt         DateTime?
+  releasedAt        DateTime?
+  refundedAt        DateTime?
+  disputedAt        DateTime?
+  resolvedAt        DateTime?
+  payoutFailedAt    DateTime?
+  chargebackAt      DateTime?
+  expiredAt         DateTime?
+  metadata          Json?
+
+  ledgerEntries LedgerEntry[]
+
+  @@index([bookingId])
+  @@index([payerId])
+  @@index([payeeId])
+  @@index([status])
+  @@index([createdAt])
+  @@index([countryCode])
+}
+
+// ─── Ledger ───────────────────────────────────────────────────────────────────
+
+model LedgerEntry {
+  id          String          @id @default(cuid())
+  escrowId    String
+  escrow      Escrow          @relation(fields: [escrowId], references: [id])
+  type        LedgerEntryType
+  amount      Int
+  currency    String          @default("USD")
+  actorId     String?
+  description String?
+  metadata    Json?
+  createdAt   DateTime        @default(now())
+
+  @@index([escrowId])
+  @@index([type])
+  @@index([createdAt])
+}
+
+// ─── Transactions ─────────────────────────────────────────────────────────────
+
+model Transaction {
+  id        String            @id @default(cuid())
+  paymentId String
+  payment   Payment           @relation(fields: [paymentId], references: [id])
+  type      TransactionType
+  status    TransactionStatus @default(PENDING)
+  amount    Int
+  currency  String            @default("USD")
+  metadata  Json?
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+
+  @@index([paymentId])
+  @@index([type])
+  @@index([status])
+}
+
+// ─── Webhooks ─────────────────────────────────────────────────────────────────
+
+model WebhookLog {
+  id             String          @id @default(cuid())
+  provider       PaymentProvider
+  eventType      String
+  payload        Json
+  status         WebhookStatus   @default(PENDING)
+  processedAt    DateTime?
+  createdAt      DateTime        @default(now())
+  error          String?
+  idempotencyKey String?         @unique
+
+  @@index([provider])
+  @@index([eventType])
+  @@index([status])
+}
+
+// ─── Financial Settings (Singleton — id = "global") ──────────────────────────
+
+model FinancialSettings {
+  id                String   @id @default("global")
+  commissionRate    Float    @default(0.10)
+  minimumPayout     Int      @default(10000)
+  minimumRefund     Int      @default(100)
+  disputeWindowDays Int      @default(7)
+  escrowExpiryDays  Int      @default(30)
+  updatedAt         DateTime @updatedAt
+  updatedBy         String?
+}
+
+// ─── Payout Accounts ──────────────────────────────────────────────────────────
+
+model PayoutAccount {
+  id             String          @id @default(cuid())
+  professionalId String          @unique
+  provider       PaymentProvider
+  accountRef     String
+  accountName    String?
+  currency       String          @default("USD")
+  isVerified     Boolean         @default(false)
+  metadata       Json?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  @@index([professionalId])
+  @@index([provider])
+}
+
+// ─── Fraud Flags ──────────────────────────────────────────────────────────────
+
+model FraudFlag {
+  id          String        @id @default(cuid())
+  userId      String
+  type        FraudFlagType
+  riskScore   Int           @default(0)
+  description String?
+  details     Json?
+  resolved    Boolean       @default(false)
+  resolvedAt  DateTime?
+  createdAt   DateTime      @default(now())
+
+  @@index([userId])
+  @@index([type])
+  @@index([resolved])
+  @@index([createdAt])
+}
+
+// ─── Reconciliation ───────────────────────────────────────────────────────────
+
+model ReconciliationLog {
+  id            String          @id @default(cuid())
+  provider      PaymentProvider
+  periodStart   DateTime
+  periodEnd     DateTime
+  dbCount       Int             @default(0)
+  dbTotal       Int             @default(0)
+  providerCount Int             @default(0)
+  providerTotal Int             @default(0)
+  discrepancies Json?
+  status        String          @default("PENDING")
+  createdAt     DateTime        @default(now())
+  completedAt   DateTime?
+
+  @@index([provider])
+  @@index([periodStart])
+  @@index([status])
+}

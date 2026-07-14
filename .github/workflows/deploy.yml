@@ -1,0 +1,59 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'artifacts/payment-service/**'
+
+jobs:
+  deploy:
+    name: Deploy Payment Service
+    runs-on: ubuntu-latest
+    environment: production
+    needs: []
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: latest
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        working-directory: artifacts/payment-service
+        run: pnpm run db:generate
+
+      - name: Build
+        working-directory: artifacts/payment-service
+        run: pnpm run build
+        env:
+          NODE_ENV: production
+
+      - name: Run database migrations
+        working-directory: artifacts/payment-service
+        run: npx prisma migrate deploy --schema=./prisma/schema.prisma
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+      - name: Build Docker image
+        run: |
+          docker build \
+            -f artifacts/payment-service/Dockerfile \
+            -t payment-service:${{ github.sha }} \
+            -t payment-service:latest \
+            .
+
+      - name: Push Docker image
+        run: |
+          echo "Push to your registry here"
+          # docker push your-registry/payment-service:${{ github.sha }}
